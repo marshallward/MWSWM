@@ -1,8 +1,8 @@
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  
 MODULE ShallowWaterSystem
   IMPLICIT NONE
-  
-  ! Spatial System Parameters (Stored in "InitialData.nc")
+
+  ! Spatial System Parameters (Stored in 'InitialData.nc')
   REAL(8) :: Lx, Ly                       ! Physical Domain Length in x and y
   INTEGER :: nM, nN                       ! Num of Collocation Pts in x and y
   !   (Derived quantities)
@@ -12,59 +12,78 @@ MODULE ShallowWaterSystem
   ! Control Parameters
   LOGICAL, PARAMETER :: dealias = .TRUE.
   
+  ! Not Implemented Yet
+  LOGICAL, PARAMETER :: shockfilter = .FALSE.
+
   ! Storage Paramters
-  INTEGER, PARAMETER :: BuffSize = 1e2
-  INTEGER, PARAMETER :: DataRate = 1e2
-  
+  INTEGER, PARAMETER :: buffSize = 1e2
+  INTEGER, PARAMETER :: dataRate = 1e1
+
   ! Temporal System Parameters
-  REAL(8), PARAMETER :: dt = 1D-3         ! Integration Timestep
-  INTEGER, PARAMETER :: nT = 4e4          ! Number of Timesteps
+  REAL(8), PARAMETER :: dt = 1D-2         ! Integration Timestep
+  INTEGER, PARAMETER :: nT = 1e3          ! Number of Timesteps
   REAL(8), PARAMETER :: Tmax = dt*nT      ! Integration Time
 
   ! Physical Scaling Parameters
-  ! (I'm going to phase these out, they are redundant)
   REAL(8), PARAMETER :: epsilon = 0.1     ! Rossby Number
-  
-  ! Numerical Parameters
-  ! This is redundant, but still present; dealiasing achieves the same effect
-  REAL(8), PARAMETER :: visc = 0e-5      ! Numerical Viscosity
-  INTEGER, PARAMETER :: vN = 1           ! Viscosity Order, (nabla)^2n
-  
+
+  ! Grids
+  REAL(8), POINTER :: xGrid(:), yGrid(:)  ! Space Grid
+  REAL(8), POINTER :: kGrid(:), lGrid(:)  ! Mode Grid
+  REAL(8), POINTER :: tGrid(:)            ! Time Grid
+
   ! Physical System Variables
-  REAL(8), POINTER :: u(:,:), ux(:,:), uy(:,:), Du(:,:)     ! x-velocity
-  REAL(8), POINTER :: v(:,:), vx(:,:), vy(:,:), Dv(:,:)     ! y-velocity
-  REAL(8), POINTER :: h(:,:), hx(:,:), hy(:,:), Dh(:,:)     ! Surface Ht
-  
+  REAL(8), POINTER :: u(:,:), ux(:,:), uy(:,:), Fu(:,:)     ! x-velocity
+  REAL(8), POINTER :: v(:,:), vx(:,:), vy(:,:), Fv(:,:)     ! y-velocity
+  REAL(8), POINTER :: h(:,:), hx(:,:), hy(:,:), Fh(:,:)     ! Surface Ht
+
+  COMPLEX(8), POINTER :: Fq(:,:)    ! PV Mode Forcing
+  COMPLEX(8), POINTER :: Fp(:,:)    ! Gravity Mode Forcing (NB: Fm = (Fp)*)
+
   ! Intermediary FFTW Variables
-  COMPLEX(8), POINTER :: uF(:,:), uxF(:,:), uyF(:,:), DuF(:,:) ! Fourier u data
-  COMPLEX(8), POINTER :: vF(:,:), vxF(:,:), vyF(:,:), DvF(:,:) ! Fourier v data
-  COMPLEX(8), POINTER :: hF(:,:), hxF(:,:), hyF(:,:), DhF(:,:) ! Fourier h data
-  
+  COMPLEX(8), POINTER :: uF(:,:), uxF(:,:), uyF(:,:), FuF(:,:)   ! FFT u data
+  COMPLEX(8), POINTER :: vF(:,:), vxF(:,:), vyF(:,:), FvF(:,:)   ! FFT v data
+  COMPLEX(8), POINTER :: hF(:,:), hxF(:,:), hyF(:,:), FhF(:,:)   ! FFT h data
+
+  COMPLEX(8), POINTER :: FqF(:,:), FpF(:,:) ! FFT Modal Forcing
+
   ! FFTW Control Variables
-  INTEGER(8) :: uPlan, uxPlan, uyPlan, DuPlan        ! FFTW u plans
-  INTEGER(8) :: vPlan, vxPlan, vyPlan, DvPlan        ! FFTW v plans
-  INTEGER(8) :: hPlan, hxPlan, hyPlan, DhPlan        ! FFTW h plans
-  
+  INTEGER(8) :: uPlan, uxPlan, uyPlan, FuPlan        ! FFTW u plans
+  INTEGER(8) :: vPlan, vxPlan, vyPlan, FvPlan        ! FFTW v plans
+  INTEGER(8) :: hPlan, hxPlan, hyPlan, FhPlan        ! FFTW h plans
+  INTEGER(8) :: FqPlan, FpPlan                       ! FFTW Forcing Plans
+
   INTEGER(8) :: uFilterPlan, vFilterPlan, hFilterPlan
 
-  ! NetCDF Control Variables
-  INTEGER :: ncInputID, ncOutputID, &
-             xDimID, yDimID, tDimID, &
-             uVInputID, vVInputID, hVInputID, &
-             LxVInputID, LyVInputID, nMVInputID, nNVInputID, &
-             xVarID, yVarID, tVarID, uVarID, vVarID, hVarID, &
-             epsilonVarID, dataRateVarID, &
-             LxVarID, LyVarID, dxVarID, dyVarID, dtVarID, &
-             nMVarID, nNVarID, ntVarID, mMVarID, mNVarID, &
-             energyVarID
-
-  CHARACTER (len = *), PARAMETER :: inputName  = "InitialData.nc"
-  CHARACTER (len = *), PARAMETER :: outputName = "ShallowData.nc"
-  
   ! Numerical Parameters
   REAL(4),  PARAMETER :: FPI = 3.14159
   REAL(8),  PARAMETER :: DPI = 3.14159265358979D+0
   ! REAL(16), PARAMETER :: QPI = 3.14159265358979323846264338327950Q+0
+
+CONTAINS
+  ! PV Mode Forcing Equation
+  REAL(8) FUNCTION FqEqn(x, y, t)
+    REAL(8), INTENT(IN) :: x, y, t
+    FqEqn = 0.0
+  END FUNCTION FqEqn
+
+  ! +Gravity Wave Forcing Equation
+  COMPLEX(8) FUNCTION FpEqn(x, y, t)
+    REAL(8), INTENT(IN) :: x, y, t
+!    FpEqn = EXP((0.0,1.0)*(5*x-sqrt(1+5.0)**2)*t)
+!    FpEqn = EXP(-1**2*(x-5.0)**2)*EXP((0.0,1.0)*(1.6473*x - 1.9271*t))
+    FpEqn = 0.0
+  END FUNCTION FpEqn
+  
+  ! Jump Discontinuity Filter Function
+  ! This is not a smart idea
+  ! - It produces nicer results, not more accurate results
+  ! - I need a physically motivated smoothing, a closure model of some sort
+  REAL(8) FUNCTION FilterEqn(x)
+    REAL(8), INTENT(IN) :: x
+  ! [Raised Cosine]
+    FilterEqn = 0.5*(1+DCOS(x))
+  END FUNCTION FilterEqn
   
 END MODULE ShallowWaterSystem
 
@@ -73,23 +92,17 @@ END MODULE ShallowWaterSystem
 PROGRAM ShallowWaterModel
 !
 ! Program Description:
-!   Weak attempt at a pseudospectral shallow water model, with a minimum of
-!   cheats.
+!   Pseudospectral shallow water model
+!   Periodic Rectangular Boundary Conditions
+!   Free Parameters:
+!     Rossby Number (epsilon)
+!     Domain Size (Lx, Ly) [Specified in InitialWater]
+!     Initial Conditions [Specified in InitialWater]
 !
 ! --Marshall Ward
 !
-! Log:
-! 26 January   2006 - Begin Project
-! 27 February  2006 - Began implementation of FFTW
-!  9 March     2006 - Finished first draft
-!    May       2006 - Really trucking along here...
-! 18 September 2006 - Semi-functional, exploring different timestepping methods
-!  2 October   2006 - Nonlinear instability
-!    December  2006 - Producing physically meaningful results
 
   ! Modules
-  USE typeSizes
-  USE netcdf
   USE ShallowWaterSystem
 
   IMPLICIT NONE
@@ -106,70 +119,59 @@ PROGRAM ShallowWaterModel
   REAL(8) :: energy
   
   ! I/O Write Buffer
-  REAL(8), POINTER :: uBuff(:,:,:), vBuff(:,:,:), hBuff(:,:,:), eBuff(:)
+  REAL(8), POINTER :: dataBuffer(:,:,:,:)
+
   INTEGER :: tFileWrite, tFileBase, tBufferWrite, tBufferIndex
-  
+
 !!!!!!!!!!!!!!!!!!!!!!!!!!
   
   PRINT*, "Begin ShallowWater"
   
   !** Load Input File **!
-  CALL check(nf90_open(trim(inputName), nf90_nowrite, ncInputID))
+  OPEN(unit = 20, file = 'InitialData.raw', status = 'OLD', &
+       form = 'UNFORMATTED')
   
-  !**** Get variable IDs
-  CALL check(nf90_inq_varid(ncInputID, "u", uVInputID))
-  CALL check(nf90_inq_varid(ncInputID, "v", vVInputID))
-  CALL check(nf90_inq_varid(ncInputID, "h", hVInputID))
-
-  CALL check(nf90_inq_varid(ncInputID, "Lx", LxVInputID))
-  CALL check(nf90_inq_varid(ncInputID, "Ly", LyVInputID))
-  
-  CALL check(nf90_inq_varid(ncInputID, "nM", nMVInputID))
-  CALL check(nf90_inq_varid(ncInputID, "nN", nNVInputID))
-
   !**** Get the data size variables
-  CALL check(nf90_get_var(ncInputID, LxVInputID, Lx))
-  CALL check(nf90_get_var(ncInputID, LyVInputID, Ly))
-  CALL check(nf90_get_var(ncInputID, nMVInputID, nM))
-  CALL check(nf90_get_var(ncInputID, nNVInputID, nN))
-  
-  !**** Compute derived variables
-  dx = Lx / nM;  dy = Ly / nN
-  mM = nM - 1;   mN = nN - 1
-  
+  READ(20) Lx; READ(20) Ly; READ(20) dx; READ(20) dy
+  READ(20) nM; READ(20) nN; READ(20) mM; READ(20) mN
+
   !**** Allocate variable memory
-  ALLOCATE( u(0:mM, 0:mN)); ALLOCATE( uF(0:nM/2, 0:mN));
-  ALLOCATE( v(0:mM, 0:mN)); ALLOCATE( vF(0:nM/2, 0:mN));
-  ALLOCATE( h(0:mM, 0:mN)); ALLOCATE( hF(0:nM/2, 0:mN));
+  ALLOCATE( u(0:mM, 0:mN)); ALLOCATE( uF(0:nM/2, 0:mN))
+  ALLOCATE( v(0:mM, 0:mN)); ALLOCATE( vF(0:nM/2, 0:mN))
+  ALLOCATE( h(0:mM, 0:mN)); ALLOCATE( hF(0:nM/2, 0:mN))
 
-  ALLOCATE(ux(0:mM, 0:mN)); ALLOCATE(uxF(0:nM/2, 0:mN));
-  ALLOCATE(vx(0:mM, 0:mN)); ALLOCATE(vxF(0:nM/2, 0:mN));
-  ALLOCATE(hx(0:mM, 0:mN)); ALLOCATE(hxF(0:nM/2, 0:mN));
+  ALLOCATE(ux(0:mM, 0:mN)); ALLOCATE(uxF(0:nM/2, 0:mN))
+  ALLOCATE(vx(0:mM, 0:mN)); ALLOCATE(vxF(0:nM/2, 0:mN))
+  ALLOCATE(hx(0:mM, 0:mN)); ALLOCATE(hxF(0:nM/2, 0:mN))
 
-  ALLOCATE(uy(0:mM, 0:mN)); ALLOCATE(uyF(0:nM/2, 0:mN));
-  ALLOCATE(vy(0:mM, 0:mN)); ALLOCATE(vyF(0:nM/2, 0:mN));
-  ALLOCATE(hy(0:mM, 0:mN)); ALLOCATE(hyF(0:nM/2, 0:mN));
+  ALLOCATE(uy(0:mM, 0:mN)); ALLOCATE(uyF(0:nM/2, 0:mN))
+  ALLOCATE(vy(0:mM, 0:mN)); ALLOCATE(vyF(0:nM/2, 0:mN))
+  ALLOCATE(hy(0:mM, 0:mN)); ALLOCATE(hyF(0:nM/2, 0:mN))
 
-  ALLOCATE(Du(0:mM, 0:mN)); ALLOCATE(DuF(0:nM/2, 0:mN));
-  ALLOCATE(Dv(0:mM, 0:mN)); ALLOCATE(DvF(0:nM/2, 0:mN));
-  ALLOCATE(Dh(0:mM, 0:mN)); ALLOCATE(DhF(0:nM/2, 0:mN));
+  ALLOCATE(Fu(0:mM, 0:mN)); ALLOCATE(FuF(0:nM/2, 0:mN))
+  ALLOCATE(Fv(0:mM, 0:mN)); ALLOCATE(FvF(0:nM/2, 0:mN))
+  ALLOCATE(Fh(0:mM, 0:mN)); ALLOCATE(FhF(0:nM/2, 0:mN))
+
+  ALLOCATE(Fq(0:mM, 0:mN)); ALLOCATE(FqF(0:mM, 0:mN))
+  ALLOCATE(Fp(0:mM, 0:mN)); ALLOCATE(FpF(0:mM, 0:mN))
+
+  ALLOCATE(uLast(0:mM, 0:mN))
+  ALLOCATE(uTemp(0:mM, 0:mN))
+  ALLOCATE(  uF2(0:mM, 0:mN))
+
+  ALLOCATE(vLast(0:mM, 0:mN))
+  ALLOCATE(vTemp(0:mM, 0:mN))
+  ALLOCATE(  vF2(0:mM, 0:mN))
+
+  ALLOCATE(hLast(0:mM, 0:mN))
+  ALLOCATE(hTemp(0:mM, 0:mN))
+  ALLOCATE(  hF2(0:mM, 0:mN))
+
+  ALLOCATE(dataBuffer(0:mM, 0:mN, 0:buffSize-1, 3))
   
-  ALLOCATE(uLast(0:mM, 0:mN));
-  ALLOCATE(uTemp(0:mM, 0:mN));
-  ALLOCATE(  uF2(0:mM, 0:mN));
-
-  ALLOCATE(vLast(0:mM, 0:mN));
-  ALLOCATE(vTemp(0:mM, 0:mN));
-  ALLOCATE(  vF2(0:mM, 0:mN));
-
-  ALLOCATE(hLast(0:mM, 0:mN));
-  ALLOCATE(hTemp(0:mM, 0:mN));
-  ALLOCATE(  hF2(0:mM, 0:mN));
-
-  ALLOCATE(uBuff(0:mM, 0:mN, 0:BuffSize-1));
-  ALLOCATE(vBuff(0:mM, 0:mN, 0:BuffSize-1));
-  ALLOCATE(hBuff(0:mM, 0:mN, 0:BuffSize-1));
-  ALLOCATE(eBuff(0:BuffSize-1));
+  ALLOCATE(xGrid(0:mM)); ALLOCATE(yGrid(0:mN))
+  ALLOCATE(kGrid(0:mM)); ALLOCATE(lGrid(0:mN))
+  ALLOCATE(tGrid(0:(nT/dataRate)))
   
   PRINT*, "Memory Allocated"
   
@@ -180,16 +182,12 @@ PROGRAM ShallowWaterModel
                              FFTW_MEASURE)
   CALL dfftw_plan_dft_c2r_2d(uyPlan, nM, nN, uyF, uy, FFTW_BACKWARD, &
                              FFTW_MEASURE)
-  CALL dfftw_plan_dft_c2r_2d(DuPlan, nM, nN, DuF, Du, FFTW_BACKWARD, &
-                             FFTW_MEASURE)
 
   CALL dfftw_plan_dft_r2c_2d(vPlan,  nM, nN, v,   vF, FFTW_FORWARD, &
                              FFTW_MEASURE)
   CALL dfftw_plan_dft_c2r_2d(vxPlan, nM, nN, vxF, vx, FFTW_BACKWARD, &
                              FFTW_MEASURE)
   CALL dfftw_plan_dft_c2r_2d(vyPlan, nM, nN, vyF, vy, FFTW_BACKWARD, &
-                             FFTW_MEASURE)
-  CALL dfftw_plan_dft_c2r_2d(DvPlan, nM, nN, DvF, Dv, FFTW_BACKWARD, &
                              FFTW_MEASURE)
 
   CALL dfftw_plan_dft_r2c_2d(hPlan,  nM, nN, h,   hF, FFTW_FORWARD, &
@@ -198,7 +196,18 @@ PROGRAM ShallowWaterModel
                              FFTW_MEASURE)
   CALL dfftw_plan_dft_c2r_2d(hyPlan, nM, nN, hyF, hy, FFTW_BACKWARD, &
                              FFTW_MEASURE)
-  CALL dfftw_plan_dft_c2r_2d(DhPlan, nM, nN, DhF, Dh, FFTW_BACKWARD, &
+
+  !** Forcing FFTW Plans **!
+  CALL dfftw_plan_dft_2d(FqPlan, nM, nN, Fq, FqF, FFTW_FORWARD, &
+                         FFTW_MEASURE)
+  CALL dfftw_plan_dft_2d(FpPlan, nM, nN, Fp, FpF, FFTW_FORWARD, &
+                         FFTW_MEASURE)
+
+  CALL dfftw_plan_dft_c2r_2d(FuPlan, nM, nN, FuF, Fu, FFTW_BACKWARD, &
+                             FFTW_MEASURE)
+  CALL dfftw_plan_dft_c2r_2d(FvPlan, nM, nN, FvF, Fv, FFTW_BACKWARD, &
+                             FFTW_MEASURE)
+  CALL dfftw_plan_dft_c2r_2d(FhPlan, nM, nN, FhF, Fh, FFTW_BACKWARD, &
                              FFTW_MEASURE)
 
   !** Dealias FFTW Plans **!
@@ -210,123 +219,57 @@ PROGRAM ShallowWaterModel
                              FFTW_MEASURE)
   
   PRINT*, "FFTW Initialized"
+  
+  ! Get (x,y) grid
+  READ(20) xGrid; READ(20) yGrid
 
-  !**** Fill (u,v,h) variables
-  CALL check(nf90_get_var(ncInputID, uVInputID, u, (/ 1, 1 /), (/ nM, nN /) ))
-  CALL check(nf90_get_var(ncInputID, vVInputID, v, (/ 1, 1 /), (/ nM, nN /) ))
-  CALL check(nf90_get_var(ncInputID, hVInputID, h, (/ 1, 1 /), (/ nM, nN /) ))
+  ! Get (u0,v0,h0)
+  READ(20) u; READ(20) v; READ(20) h
   
-  ! (1) Initialize Output File
-  ! (1a) Create Output File
-  CALL check(nf90_create(trim(outputName), &
-                         or(nf90_clobber, nf90_64bit_offset), &
-  !*(alt cmode)*         cmode = nf90_clobber, &
-                         ncOutputID))
-             
-  ! (1b) Define Dimensions
-  CALL check(nf90_def_dim(ncOutputID, "x", nM, xDimID))
-  CALL check(nf90_def_dim(ncOutputID, "y", nN, yDimID))  
-  CALL check(nf90_def_dim(ncOutputID, "t", (nT/DataRate)+1, tDimID))
-  
-  ! (1c) Define Variables
-  CALL check(nf90_def_var(ncOutputID, "x", nf90_double, xDimID, xVarID))  
-  CALL check(nf90_def_var(ncOutputID, "y", nf90_double, yDimID, yVarID))
-  CALL check(nf90_def_var(ncOutputID, "t", nf90_double, tDimID, tVarID))
-  
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "u", xtype = nf90_double, &
-                          dimids = (/ xDimID, yDimID, tDimID /), &
-                          varID = uVarID))
-  
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "v", xtype = nf90_double, &
-                          dimids = (/ xDimID, yDimID, tDimID /), &
-                          varID = vVarID))
-  
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "h", xtype = nf90_double, &
-                          dimids = (/ xDimID, yDimID, tDimID /), &
-                          varID = hVarID))
-  
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "energy", &
-                          xtype = nf90_double, &
-                          dimids = (/ tDimID /), &
-                          varID = energyVarID))
-  
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "epsilon", &
-                          xtype = nf90_double, &
-                          varID = epsilonVarID))
+  ! Close 'InitialData.raw'
+  CLOSE(20)
 
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "Lx", xtype = nf90_double, &
-                          varID = lxVarID))
-
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "Ly", xtype = nf90_double, &
-                          varID = lyVarID))
+  ! Initialize Output File
+  OPEN(unit = 30, file = 'ShallowData.raw', status = 'REPLACE', &
+        form = 'UNFORMATTED')
+  OPEN(unit = 31, file = 'LastData.raw', status = 'REPLACE', &
+       form = 'UNFORMATTED')
+    
+  PRINT*, "Output Files Created"
   
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "dx", xtype = nf90_double, &
-                          varID = dxVarID))
-
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "dy", xtype = nf90_double, &
-                          varID = dyVarID))
-
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "dt", xtype = nf90_double, &
-                          varID = dtVarID))
-  
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "nM", xtype = nf90_int, &
-                          varID = nMVarID))
-  
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "nN", xtype = nf90_int, &
-                          varID = nNVarID))
-  
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "nT", xtype = nf90_int, &
-                          varID = nTVarID))
-  
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "mM", xtype = nf90_int, &
-                          varID = mMVarID))
-  
-  CALL check(nf90_def_var(ncid = ncOutputID, name = "mN", xtype = nf90_int, &
-                          varID = mNVarID))
-  
-  CALL check(nf90_def_var(ncOutputID, "dataRate", nf90_int, dataRateVarID))
-
-  CALL check(nf90_enddef(ncOutputID))
-  
-  PRINT*, "Output File Created"
-  
-  ! (1d) Fill in Grid Values (i.e. Dimension Grid)
-  DO i = 1, nM
-    CALL check(nf90_put_var(ncOutputID, xVarID, (i-1)*dx, start = (/ i /) ))
+  ! Create k grid
+  DO i = 0, mM
+    kGrid(i) = (2.0*DPI * (i - nM*(i/(nM/2 + 1)))) / Lx   ! (Check this)
   END DO
 
-  DO i = 1, nN
-    CALL check(nf90_put_var(ncOutputID, yVarID, (i-1)*dy, start = (/ i /) ))
+  ! Create l grid
+  DO j = 0, mN
+    lGrid(j) = (2.0*DPI * (j - nN*(j/(nN/2 + 1)))) / Ly   ! (Check this)
   END DO
 
-  DO i = 1, (nT/DataRate)+1
-    CALL check(nf90_put_var(ncOutputID, tVarID, (i-1)*dt*DataRate, &
-                            start = (/ i /) ))
+  ! Create t grid
+  DO t = 0, (nT/DataRate)
+    tGrid(t) = t*dt*DataRate
   END DO
 
-  ! (1d') Fill in Parameters
-  CALL check(nf90_put_var(ncOutputID, epsilonVarID, epsilon))
-  CALL check(nf90_put_var(ncOutputID, dataRateVarID, dataRate))
+  ! Save parameters to 'ShallowData.raw'
+  WRITE(30) Lx; WRITE(30) Ly; WRITE(30) dx; WRITE(30) dy; WRITE(30) dt
+  WRITE(30) nM; WRITE(30) nN; WRITE(30) nT; WRITE(30) mM; WRITE(30) mN
+  WRITE(30) epsilon; WRITE(30) dataRate; WRITE(30) buffSize
   
-  CALL check(nf90_put_var(ncOutputID, lxVarID, Lx))
-  CALL check(nf90_put_var(ncOutputID, lyVarID, Ly))
+  WRITE(30) xGrid; WRITE(30) yGrid; WRITE(30) tGrid
+
+  ! Save parameters to 'InitialData.raw'
+  WRITE(31) Lx; WRITE(31) Ly; WRITE(31) dx; WRITE(31) dy
+  WRITE(31) nM; WRITE(31) nN; WRITE(31) mM; WRITE(31) mN
+
+  WRITE(31) xGrid; WRITE(31) yGrid
   
-  CALL check(nf90_put_var(ncOutputID, dxVarID, dx))
-  CALL check(nf90_put_var(ncOutputID, dyVarID, dy))
-  CALL check(nf90_put_var(ncOutputID, dtVarID, dt))
-
-  CALL check(nf90_put_var(ncOutputID, nMVarID, nM))
-  CALL check(nf90_put_var(ncOutputID, nNVarID, nN))
-  CALL check(nf90_put_var(ncOutputID, ntVarID, nT))
-
-  CALL check(nf90_put_var(ncOutputID, mMVarID, mM))
-  CALL check(nf90_put_var(ncOutputID, mNVarID, mN))
-
   IF(dealias) THEN
     CALL DealiasFilter
   END IF
   
-  !** Calculate energy
+  !** Calculate dumdum energy
   energy = 0
   DO j = 0, mN
     DO i = 0, mM
@@ -336,22 +279,40 @@ PROGRAM ShallowWaterModel
   END DO
   energy = energy/(nM*nN)
   
-  CALL check(nf90_put_var(ncOutputID, uVarID, u, &
-                            start = (/ 1, 1, 1 /),   &
-                            count = (/ nM, nN, 1 /) ))
-  CALL check(nf90_put_var(ncOutputID, vVarID, v, &
-                            start = (/ 1, 1, 1 /),   &
-                            count = (/ nM, nN, 1 /) ))
-  CALL check(nf90_put_var(ncOutputID, hVarID, h, &
-                            start = (/ 1, 1, 1 /),   &
-                            count = (/ nM, nN, 1 /) ))
-  CALL check(nf90_put_var(ncOutputID, energyVarID, energy, &
-                            start = (/ 1 /) ))  
+  WRITE(30) u; WRITE(30) v; WRITE(30) h
   
   PRINT*, "Energy:", energy
   
   DO t = 1, nT
     ! NOTE: At timestep t, we are computing u(t) from u(t-1) and u(t-2)
+    !  (except at t=1)
+
+    !--------------------------------------
+    ! Calculate the Forcing along the grid
+    !  - Determine (q,p,m) forcing
+    !  - FFT
+    !  - Calculate (u,v,h) forcing
+    !  - IFFT to spatial forcing
+    !--------------------------------------
+    DO j = 0, mN
+      DO i = 0, mM
+        Fq(i,j) = FqEqn(i*dx, j*dy, t*dt)
+        Fp(i,j) = FpEqn(i*dx, j*dy, t*dt)
+      END DO
+    END DO
+
+    CALL GetForcing
+
+!
+!   Use this code if you want to force (u,v,h) instead of (q,p,m)
+
+!    DO j = 0, mN
+!      DO i = 0, mM
+!        Fu(i,j) = 0.0
+!        Fv(i,j) = 0.0
+!        Fh(i,j) = DEXP(-(i*dx-5.0)**2) * DSIN(10*t*dt)
+!      END DO
+!    END DO
 
     IF(t == 1) THEN
       !------------------------------------
@@ -380,13 +341,14 @@ PROGRAM ShallowWaterModel
         DO i = 0, mM
           uTemp(i,j) =  vLast(i,j) - hx(i,j) &
                       - epsilon*(uLast(i,j)*ux(i,j) + vLast(i,j)*uy(i,j)) &
-                      + Du(i,j)
+                      + Fu(i,j)
           vTemp(i,j) = -uLast(i,j) - hy(i,j) &
                       - epsilon*(uLast(i,j)*vx(i,j) + vLast(i,j)*vy(i,j)) &
-                      + Dv(i,j)
+                      + Fv(i,j)
           hTemp(i,j) = -(ux(i,j) + vy(i,j)) &
                       - epsilon*(uLast(i,j)*hx(i,j) + vLast(i,j)*hy(i,j) &
-                              + hLast(i,j)*(ux(i,j) + vy(i,j))) + Dh(i,j)
+                                 + hLast(i,j)*(ux(i,j) + vy(i,j))) &
+                      + Fh(i,j)
         END DO
       END DO
   
@@ -408,8 +370,6 @@ PROGRAM ShallowWaterModel
       !------------------------------------
       ! uF2 <- F(u')
       !   u <- u(1) == u(0) + dt*(1/2)*(F(u(0)) + F(u(midpt)))
-      !
-      ! [verify that FFTW in GetDerivatives doesn't clobber u]
       !------------------------------------
       CALL GetDerivatives
   
@@ -417,12 +377,15 @@ PROGRAM ShallowWaterModel
       DO j = 0, mN
         DO i = 0, mM
           uF2(i,j) =  v(i,j) - hx(i,j) &
-                    - epsilon*(u(i,j)*ux(i,j) + v(i,j)*uy(i,j)) + Du(i,j)
+                    - epsilon*(u(i,j)*ux(i,j) + v(i,j)*uy(i,j)) &
+                    + Fu(i,j)
           vF2(i,j) = -u(i,j) - hy(i,j) &
-                    - epsilon*(u(i,j)*vx(i,j) + v(i,j)*vy(i,j)) + Dv(i,j)
+                    - epsilon*(u(i,j)*vx(i,j) + v(i,j)*vy(i,j)) &
+                    + Fv(i,j)
           hF2(i,j) = -(ux(i,j) + vy(i,j)) &
                     - epsilon*(u(i,j)*hx(i,j) + v(i,j)*hy(i,j) &
-                          + h(i,j)*(ux(i,j) + vy(i,j))) + Dh(i,j)
+                               + h(i,j)*(ux(i,j) + vy(i,j))) &
+                    + Fh(i,j)
                       
           u(i,j) = uLast(i,j) + 0.5*dt*(uTemp(i,j) + uF2(i,j))
           v(i,j) = vLast(i,j) + 0.5*dt*(vTemp(i,j) + vF2(i,j))
@@ -475,16 +438,16 @@ PROGRAM ShallowWaterModel
         DO i = 0, mM
           uF2(i,j) =  vTemp(i,j) - hx(i,j) &
                     - epsilon*(uTemp(i,j)*ux(i,j) + vTemp(i,j)*uy(i,j)) &
-                    + Du(i,j)
+                    + Fu(i,j)
                   
           vF2(i,j) = -uTemp(i,j) - hy(i,j) &
                     - epsilon*(uTemp(i,j)*vx(i,j) + vTemp(i,j)*vy(i,j)) &
-                    + Dv(i,j)
+                    + Fv(i,j)
           
           hF2(i,j) = -(ux(i,j) + vy(i,j)) &
                     - epsilon*(hTemp(i,j)*(ux(i,j) + vy(i,j))       &
                                + uTemp(i,j)*hx(i,j) + vTemp(i,j)*hy(i,j)) &
-                    + Dh(i,j)
+                    + Fh(i,j)
         END DO
       END DO
       
@@ -524,16 +487,16 @@ PROGRAM ShallowWaterModel
         DO i = 0, mM
           uTemp(i,j) =  v(i,j) - hx(i,j) &
                       - epsilon*(u(i,j)*ux(i,j) + v(i,j)*uy(i,j)) &
-                      + Du(i,j)
+                      + Fu(i,j)
                   
           vTemp(i,j) = -u(i,j) - hy(i,j) &
                       - epsilon*(u(i,j)*vx(i,j) + v(i,j)*vy(i,j)) &
-                      + Dv(i,j)
+                      + Fv(i,j)
           
           hTemp(i,j) = -(ux(i,j) + vy(i,j)) &
                       - epsilon*(h(i,j)*(ux(i,j) + vy(i,j)) &
                                  + u(i,j)*hx(i,j) + v(i,j)*hy(i,j)) &
-                      + Dh(i,j)
+                      + Fh(i,j)
         END DO
       END DO
       
@@ -566,13 +529,15 @@ PROGRAM ShallowWaterModel
 
     ! End LFT Timestep
     END IF
+    
+    
     !------------------------------------
     ! Output Results
     !------------------------------------
-    
-    !*****************************************************************!
-    !*** This won't work if BuffSize and DataRate don't go into nT ***!
-    !*****************************************************************!
+    ! There may be some bugs in here
+    !*********************************************************************!
+    !*** This won't work if BuffSize and DataRate don't divide into nT ***!
+    !*********************************************************************!
     
     tFileWrite = MOD(t, BuffSize*DataRate)
     tFileBase = (t-1)/(DataRate*BuffSize)
@@ -584,28 +549,16 @@ PROGRAM ShallowWaterModel
     IF(tBufferWrite == 0) THEN
       DO j = 0, mN
         DO i = 0, mM
-          uBuff(i,j,tBufferIndex) = u(i,j)
-          vBuff(i,j,tBufferIndex) = v(i,j)
-          hBuff(i,j,tBufferIndex) = h(i,j)
+          dataBuffer(i,j,tBufferIndex,1) = u(i,j)
+          dataBuffer(i,j,tBufferIndex,2) = v(i,j)
+          dataBuffer(i,j,tBufferIndex,3) = h(i,j)
         END DO
       END DO
-      eBuff(tBufferIndex) = energy
     END IF
     
     IF(tFileWrite == 0) THEN
       PRINT*, "Writing at t =", t
-      CALL check(nf90_put_var(ncOutputID, uVarID, uBuff, &
-                              start = (/ 1, 1, tFileBase*BuffSize+2 /), &
-                              count = (/ nM, nN, BuffSize /) ))
-      CALL check(nf90_put_var(ncOutputID, vVarID, vBuff, &
-                              start = (/ 1, 1, tFileBase*BuffSize+2 /), &
-                              count = (/ nM, nN, BuffSize /) ))
-      CALL check(nf90_put_var(ncOutputID, hVarID, hBuff, &
-                              start = (/ 1, 1, tFileBase*BuffSize+2 /), &
-                              count = (/ nM, nN, BuffSize /) ))
-      CALL check(nf90_put_var(ncOutputID, energyVarID, eBuff, &
-                              start = (/ tFileBase*BuffSize+2 /), &
-                              count = (/ BuffSize /) ))
+      WRITE(30) dataBuffer
     END IF
     
     IF(MOD(100*t, 10*nT) == 0) THEN
@@ -613,6 +566,7 @@ PROGRAM ShallowWaterModel
       PRINT*, "Energy:", energy
     END IF
     
+    ! Need a better blowup check here
     IF(energy > 1e3) THEN
       PRINT*, "BLOWUP"
       PRINT*, "Energy:", energy
@@ -623,7 +577,13 @@ PROGRAM ShallowWaterModel
     ! End timestep
   END DO
   
+  ! Write final state to 'LastData.raw'
+  WRITE(31) u; WRITE(31) v; WRITE(31) h
+  
+  !---------------
   ! CLEANUP
+  !---------------
+  
   ! Deallocate FFTW Plans
   CALL dfftw_destroy_plan(uPlan)
   CALL dfftw_destroy_plan(vPlan)
@@ -637,16 +597,19 @@ PROGRAM ShallowWaterModel
   CALL dfftw_destroy_plan(vyPlan)
   CALL dfftw_destroy_plan(hyPlan)
 
-  CALL dfftw_destroy_plan(DuPlan)
-  CALL dfftw_destroy_plan(DvPlan)
-  CALL dfftw_destroy_plan(DhPlan)
-
   CALL dfftw_destroy_plan(uFilterPlan)
   CALL dfftw_destroy_plan(vFilterPlan)
   CALL dfftw_destroy_plan(hFilterPlan)
+
+  CALL dfftw_destroy_plan(FqPlan)
+  CALL dfftw_destroy_plan(FpPlan)
+  CALL dfftw_destroy_plan(FuPlan)
+  CALL dfftw_destroy_plan(FvPlan)
+  CALL dfftw_destroy_plan(FhPlan)
   
-  ! Close NetCDF Data File
-  CALL check(nf90_close(ncOutputID))
+  ! Close 'ShallowData.raw'
+  CLOSE(30)
+  CLOSE(31)
   
 !! ***RETURN TO SHELL***
   
@@ -655,14 +618,10 @@ CONTAINS
 
 ! ** SUBROUTINE GetDerivatives **
 ! Calculate derivatives by collocation
-!  * Preserves values of u, v, h and clobbers initial contents of ux, vx, etc
+!  * Preserves values of u, v, h and clobbers initial contents of ux, vx,...
   SUBROUTINE GetDerivatives
     USE ShallowWaterSystem
     
-    !Physical Control Variables
-    REAL(8) :: kmode             ! Physical wavenumber for x (k = 2pi m / Lx)
-    REAL(8) :: lmode             ! Physical wavenumber for y (l = 2pi n / Ly)
-        
     ! Indexing variables
     INTEGER :: i, j
     
@@ -675,38 +634,100 @@ CONTAINS
     !  * I preadjust for the unnormalized FFT weights here
     DO j = 0, mN
       DO i = 0, nM/2
-        kmode = 2.0*DPI * i / Lx
-        lmode = (2.0*DPI * (j - nN*(j/(nN/2 + 1)))) / Ly   ! (Check this)
-      
-        uxF(i,j) = (0.0, 1.0) * kmode * uF(i,j) / (nM*nN)
-        uyF(i,j) = (0.0, 1.0) * lmode * uF(i,j) / (nM*nN)
-        DuF(i,j) = -visc * (kmode**2 + lmode**2)**vN * uF(i,j) / (nM*nN)
+        uxF(i,j) = (0.0, 1.0) * kGrid(i) * uF(i,j) / (nM*nN)
+        uyF(i,j) = (0.0, 1.0) * lGrid(j) * uF(i,j) / (nM*nN)
         
-        vxF(i,j) = (0.0, 1.0) * kmode * vF(i,j) / (nM*nN)
-        vyF(i,j) = (0.0, 1.0) * lmode * vF(i,j) / (nM*nN)
-        DvF(i,j) = -visc * (kmode**2 + lmode**2)**vN * vF(i,j) / (nM*nN)
+        vxF(i,j) = (0.0, 1.0) * kGrid(i) * vF(i,j) / (nM*nN)
+        vyF(i,j) = (0.0, 1.0) * lGrid(j) * vF(i,j) / (nM*nN)
 
-        hxF(i,j) = (0.0, 1.0) * kmode * hF(i,j) / (nM*nN)
-        hyF(i,j) = (0.0, 1.0) * lmode * hF(i,j) / (nM*nN)
-        DhF(i,j) = -visc * (kmode**2 + lmode**2)**vN * hF(i,j) / (nM*nN)
+        hxF(i,j) = (0.0, 1.0) * kGrid(i) * hF(i,j) / (nM*nN)
+        hyF(i,j) = (0.0, 1.0) * lGrid(j) * hF(i,j) / (nM*nN)
       END DO
     END DO
     
     ! (3) Convert derivatives back to spatial form
     CALL dfftw_execute(uxPlan)
     CALL dfftw_execute(uyPlan)
-    CALL dfftw_execute(DuPlan)
 
     CALL dfftw_execute(vxPlan)
     CALL dfftw_execute(vyPlan)
-    CALL dfftw_execute(DvPlan)
 
     CALL dfftw_execute(hxPlan)
     CALL dfftw_execute(hyPlan)
-    CALL dfftw_execute(DhPlan)
     
   END SUBROUTINE
   
+!!!!!!!!!!!!!!!
+
+  SUBROUTINE GetForcing
+    USE ShallowWaterSystem
+
+    ! Indexing variables
+    INTEGER :: i, j
+
+    ! Physical variables
+    REAL(8) :: omega, Km
+    COMPLEX(8) :: FupvF, FvpvF, FhpvF
+    COMPLEX(8) :: FugpF, FvgpF, FhgpF
+    COMPLEX(8) :: FugmF, FvgmF, FhgmF
+
+    ! - Convert (Fq, Fp, Fm) to the spectral basis
+    CALL dfftw_execute(FqPlan)
+    CALL dfftw_execute(FpPlan)
+
+    ! - Calculate (Fu, Fv, Fh)
+    !  * I preadjust for the unnormalized FFT weights here
+    DO j = 0, mN
+      DO i = 0, nM/2
+        Km = SQRT(kGrid(i)**2 + lGrid(j)**2)
+        omega = SQRT(1 + Km**2)
+
+        FupvF =  (0,1)*lGrid(j)*FqF(i,j) / omega
+        FvpvF = -(0,1)*kGrid(i)*FqF(i,j) / omega
+        FhpvF = -FqF(i,j) / omega
+
+        FugpF = ( omega*kGrid(i) + (0,1)*lGrid(j)) * FpF(i,j) &
+                   / (SQRT(2d0)*omega*Km)
+        FvgpF = (-(0,1)*kGrid(i) + omega*lGrid(j)) * FpF(i,j) &
+                   / (SQRT(2d0)*omega*Km)
+        FhgpF = Km * FpF(i,j) / (SQRT(2d0)*omega)
+
+        FugmF = (-omega*kGrid(i) + (0,1)*lGrid(j)) * CONJG(FpF(nM-i,nN-j)) &
+                   / (SQRT(2d0)*omega*Km)
+        FvgmF = (-(0,1)*kGrid(i) - omega*lGrid(j)) * CONJG(FpF(nM-i,nN-j)) &
+                   / (SQRT(2d0)*omega*Km)
+        FhgmF = Km * CONJG(FpF(nM-i,nN-j)) / (SQRT(2d0)*omega)
+
+        FuF(i,j) = (FupvF + FugpF + FugmF)/(nM*nN)
+        FvF(i,j) = (FvpvF + FvgpF + FvgmF)/(nM*nN)
+        FhF(i,j) = (FhpvF + FhgpF + FhgmF)/(nM*nN)
+      END DO
+    END DO
+    
+    !** Redo (k,l) = (0,0) **!   
+    FupvF =  0d0
+    FvpvF =  0d0
+    FhpvF = -FqF(0,0)
+
+    FugpF = FpF(0,0) / SQRT(2d0)
+    FvgpF = -(0,1)*FpF(0,0) / SQRT(2d0)
+    FhgpF = 0d0
+
+    FugmF = -(-CONJG(FpF(0,0))) / SQRT(2d0)
+    FvgmF = -(0,1)*(-CONJG(FpF(0,0))) / SQRT(2d0)
+    FhgmF = 0d0
+  
+    FuF(0,0) = (FupvF + FugpF + FugmF)/(nM*nN)
+    FvF(0,0) = (FvpvF + FvgpF + FvgmF)/(nM*nN)
+    FhF(0,0) = (FhpvF + FhgpF + FhgmF)/(nM*nN)
+
+    ! - Convert (Fu, Fv, Fh) to the spatial basis
+    CALL dfftw_execute(FuPlan)
+    CALL dfftw_execute(FvPlan)
+    CALL dfftw_execute(FhPlan)
+
+  END SUBROUTINE GetForcing   
+
 !!!!!!!!!!!!!!!
 
   SUBROUTINE DealiasFilter
@@ -721,7 +742,6 @@ CONTAINS
     DO j = 0, mN
       DO i = 0, nM/2
         IF(i .GE. (nM/3 - 1) .OR. (j .GE. (nN/3 - 1) .AND. j .LE. (2*nN/3 + 1))) THEN
-!        IF(i .GE. nM/4 .OR. (j .GE. nN/4 .AND. j .LE. 3*nN/4)) THEN
           uF(i,j) = 0
           vF(i,j) = 0
           hF(i,j) = 0
@@ -740,19 +760,5 @@ CONTAINS
   END SUBROUTINE DealiasFilter
 
 !!!!!!!!!!!!!!!
-
-
-  ! Internal subroutine - checks error status after each netcdf, prints out 
-  ! text message each time an error code is returned. 
-  SUBROUTINE check(status)
-    INTEGER, INTENT(IN) :: status
-    
-    IF(status /= nf90_noerr) THEN 
-      PRINT *, trim(nf90_strerror(status))
-    END IF
-  END SUBROUTINE check  
-
-!!!!!!!!!!!!!!!
-
 
 END PROGRAM ShallowWaterModel
